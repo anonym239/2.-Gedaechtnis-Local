@@ -17,13 +17,13 @@ android {
 
     defaultConfig {
         applicationId = "de.gedaechtnis.local"
-        // API 30 (Android 11) ist nötig für AccessibilityService#takeScreenshot (OCR-Fallback).
-        minSdk = 30
+        // API 31 (Android 12): Voraussetzung der LiteRT-LM-Laufzeit; deckt auch takeScreenshot (API 30) ab.
+        minSdk = 31
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
 
-        // MediaPipe GenAI liefert native Bibliotheken nur für 64-Bit-ARM (und x86_64 für Emulatoren).
+        // LiteRT-LM liefert native Bibliotheken nur für 64-Bit-ARM (und x86_64 für Emulatoren).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
@@ -76,6 +76,7 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        jniLibs.pickFirsts += "**/liblitertlm_jni.so"
     }
 }
 
@@ -109,10 +110,10 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // On-Device-KI: OCR, Text-Embeddings, LLM
+    // On-Device-KI: OCR (ML Kit), Text-Embeddings (MediaPipe), Sprachmodelle (LiteRT-LM)
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mediapipe.tasks.text)
-    implementation(libs.mediapipe.tasks.genai)
+    implementation(libs.litertlm)
 
     testImplementation(libs.junit)
 }

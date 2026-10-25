@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     // Verlauf liegt hinter allem; Scaffold und Navigationsleiste sind transparent.
                     modifier = Modifier.fillMaxSize().background(AppBackgroundBrush),
                     containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
                     bottomBar = {
                         NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                             Tab.entries.forEach { tab ->

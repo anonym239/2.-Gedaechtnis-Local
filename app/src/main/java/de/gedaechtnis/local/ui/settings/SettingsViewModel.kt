@@ -7,8 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.gedaechtnis.local.GedaechtnisApp
 import de.gedaechtnis.local.ai.LlmState
-import de.gedaechtnis.local.ai.ModelCatalog
-import de.gedaechtnis.local.ai.ModelSuggestion
+import de.gedaechtnis.local.ai.CatalogModel
+import de.gedaechtnis.local.ai.DownloadState
+import de.gedaechtnis.local.ai.InstalledModel
 import de.gedaechtnis.local.capture.OfflineSpeechStatus
 import de.gedaechtnis.local.capture.VoiceNoteRecognizer
 import de.gedaechtnis.local.data.AppSettings
@@ -39,8 +40,18 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     /** Text einer laufenden Langzeitaktion (z. B. Modell-Import) oder null. */
     val busy: StateFlow<String?> = _busy.asStateFlow()
 
-    val deviceRamGb: Int = ModelCatalog.deviceRamGb(app)
-    val recommendedModel: ModelSuggestion = ModelCatalog.recommendedFor(app)
+    private val models = container.models
+    val deviceRamGb: Int get() = models.deviceRamGb
+    val recommendedModel: CatalogModel get() = models.recommended
+    val installedModels: StateFlow<List<InstalledModel>> = models.installed
+    val activeModelId: StateFlow<String?> = models.activeId
+    val downloads: StateFlow<Map<String, DownloadState>> = models.downloads
+    val llmError: String? get() = container.ai.llmError
+
+    private val _hfToken = MutableStateFlow(models.hfToken)
+    val hfToken: StateFlow<String> = _hfToken.asStateFlow()
+
+    fun freeSpaceBytes(): Long = models.freeSpaceBytes()
 
     private val _speechStatus = MutableStateFlow(OfflineSpeechStatus.UNKNOWN)
     val speechStatus: StateFlow<OfflineSpeechStatus> = _speechStatus.asStateFlow()
@@ -75,12 +86,25 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importModel(uri: Uri, onResult: (String) -> Unit) = launch {
         _busy.value = "Modell wird importiert …"
-        val result = container.ai.importLlmModel(uri)
+        val result = models.import(uri)
         _busy.value = null
-        onResult(result.fold({ "Modell importiert (${it / (1024 * 1024)} MB)" }, { "Import fehlgeschlagen: ${it.message}" }))
+        onResult(result.fold({ "${it.name} importiert" }, { "Import fehlgeschlagen: ${it.message}" }))
     }
 
-    fun deleteModel() = launch { container.ai.deleteLlmModel() }
+    /** Startet den Download direkt in der App (Fortschritt erscheint im Modell-Eintrag und in der Benachrichtigung). */
+    fun install(model: CatalogModel, onError: (String) -> Unit) {
+        models.download(model)?.let(onError)
+    }
+
+    fun cancelInstall(model: CatalogModel) = models.cancelDownload(model)
+    fun dismissError(model: CatalogModel) = models.clearError(model.id)
+    fun activate(model: InstalledModel) = models.setActive(model.id)
+    fun deleteModel(model: InstalledModel) = launch { models.delete(model) }
+
+    fun saveToken(token: String) {
+        models.hfToken = token
+        _hfToken.value = models.hfToken
+    }
 
     fun deleteAllData(onDone: () -> Unit) = launch {
         container.repository.deleteAll()

@@ -86,7 +86,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         serviceEnabled.value = isAccessibilityServiceEnabled()
         viewModelScope.launch(Dispatchers.IO) {
-            sizes.value = repo.databaseSizeBytes() to container.ai.llmModelFile.let { if (it.exists()) it.length() else 0L }
+            sizes.value = repo.databaseSizeBytes() to (container.models.activeModel()?.file?.length() ?: 0L)
         }
         EmbeddingWorker.runNow(getApplication())
     }

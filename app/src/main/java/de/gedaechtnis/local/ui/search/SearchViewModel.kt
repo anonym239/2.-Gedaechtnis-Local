@@ -64,13 +64,20 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(searching = false, result = result, answering = it.llmInstalled && result.hits.isNotEmpty()) }
             if (result.hits.isEmpty() || !_state.value.llmInstalled) return@launch
 
-            val generated = container.ai.answer(
+            // Antwort wird Stück für Stück angezeigt, während das Modell schreibt.
+            var generated: String? = null
+            container.ai.answerStream(
                 question = q,
                 contexts = result.hits.map { it.snippet },
                 summary = result.query.isSummary,
                 periodLabel = result.query.timeLabel,
-            )?.takeIf { it.isNotBlank() }
-            _state.update { it.copy(generated = generated, answering = false) }
+            ).collect { partial ->
+                if (partial.isNotBlank()) {
+                    generated = partial
+                    _state.update { it.copy(generated = partial) }
+                }
+            }
+            _state.update { it.copy(answering = false) }
             if (generated != null) {
                 store.lastAnswer = generated
                 store.lastAnswerGenerated = true

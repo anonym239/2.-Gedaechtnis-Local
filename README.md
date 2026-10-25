@@ -5,7 +5,7 @@ Ein **stummes Zweit-Gedächtnis**: Die App erfasst im Hintergrund, was auf dem B
 wie *„Was war das für eine PDF bezüglich des Budgets am Dienstag?“*.
 
 - **Keine Server, kein Ollama, kein Whisper.** Alles läuft auf dem Gerät.
-- **Keine Internet-Berechtigung.** Das Manifest entfernt `INTERNET` sogar aus allen Bibliotheken. Damit kann die App technisch keine Daten senden.
+- **Daten bleiben auf dem Gerät.** Internet wird nur für den Download von Sprachmodellen genutzt, den du selbst startest. Erfasste Inhalte, Suchen und Antworten verlassen das Gerät nie, und die ML-Kit-Telemetrie ist deaktiviert.
 - **Akku-schonend:** ereignisbasiert statt Polling, Debounce, Drosselung pro App, OCR nur als Fallback, Embeddings gebündelt per WorkManager, das LLM wird nur bei Bedarf geladen.
 
 | Komponente | Technik |
@@ -14,7 +14,7 @@ wie *„Was war das für eine PDF bezüglich des Budgets am Dienstag?“*.
 | Bildschirm-Kontext | `AccessibilityService` (Text-Baum) + `takeScreenshot()` und **ML Kit Text Recognition** (offline) |
 | Datenbank | Room + **FTS4**-Volltextindex (unicode61) + Float32-Vektoren als BLOB |
 | Embeddings | **MediaPipe TextEmbedder** (Universal Sentence Encoder, ~6 MB, wird beim Build automatisch geladen) |
-| Antworten | **MediaPipe LLM Inference API** (z. B. Gemma 3 1B int4), erst GPU, dann CPU als Fallback |
+| Antworten | **LiteRT-LM** mit In-App-Modellverwaltung (Qwen 2.5, Gemma 3, Gemma 3n, DeepSeek R1). Mehrere Modelle lassen sich installieren und wechseln. Erst GPU, dann CPU als Fallback |
 | Suche | Hybrid: FTS-Präfixsuche + Kosinus-Ähnlichkeit, zusammengeführt per Reciprocal Rank Fusion, mit deutschem Zeit-Parser („gestern nachmittags“, „letzten Freitag“, „vor 2 Stunden“) |
 | Hintergrundarbeit | WorkManager (Embeddings, Aufbewahrungsfrist), optional nur beim Laden |
 | CI/CD | GitHub Actions: Tests, Debug- und Release-APK, Upload als Release-Asset |
@@ -78,12 +78,12 @@ Ohne Netz läuft der Build trotzdem durch. Die App nutzt dann nur die Volltextsu
 
 ## Inbetriebnahme auf dem Gerät
 
-1. APK installieren (Android 11+, 64-Bit-ARM).
+1. APK installieren (Android 12+, 64-Bit-ARM).
 2. **Bedienungshilfe aktivieren:** Dashboard → „Bedienungshilfe aktivieren“ → *Zweit-Gedächtnis* einschalten.
    Bei per APK installierten Apps (Android 13+) zuerst unter *App-Info → ⋮ → Eingeschränkte Einstellungen zulassen* freigeben.
-3. Optional ein **LLM importieren** (Einstellungen → Lokales Sprachmodell): eine MediaPipe-kompatible `.task`-Datei,
-   z. B. Gemma 3 1B int4 aus der `litert-community` auf Hugging Face. Die Datei wird in den privaten App-Speicher kopiert.
-   Ohne LLM zeigt die Suche eine extraktive Antwort plus Timeline.
+3. Optional ein **Sprachmodell installieren** (Einstellungen → Lokale Sprachmodelle → „Installieren“).
+   Der Download läuft direkt in der App. Qwen 2.5 und DeepSeek brauchen kein Konto, Gemma braucht einen Hugging-Face-Token.
+   Ohne Sprachmodell formuliert die App die Antworten regelbasiert in ganzen Sätzen.
 4. Die Sperrliste prüfen. Banking-, Bezahl-, Passwort- und Authenticator-Apps sind vorausgewählt.
 
 ## Releases & CI/CD
@@ -119,5 +119,5 @@ Ohne Secrets wird die Release-APK mit dem Debug-Schlüssel signiert. Sie ist dan
   Er wird vom System gebunden und braucht keinen eigenen Foreground-Service. Die Statusanzeige ist eine stille, dauerhafte Benachrichtigung.
 - **Google Play:** Die Nutzung der Accessibility-API für diesen Zweck unterliegt strengen Play-Richtlinien.
   Die App ist primär für die Installation per APK (GitHub-Releases) gedacht.
-- Die MediaPipe LLM Inference API ist laut Google im Wartungsmodus. `LocalAiEngine` kapselt sie so,
-  dass ein späterer Umstieg auf LiteRT-LM nur diese eine Klasse betrifft.
+- Die Modelle stammen aus Googles `litert-community` auf Hugging Face. Die Liste mit festen Commit-Hashes steht in
+  `ModelManager.CATALOG`; Gemma-Modelle setzen die Annahme der Gemma-Lizenz und einen Token voraus.

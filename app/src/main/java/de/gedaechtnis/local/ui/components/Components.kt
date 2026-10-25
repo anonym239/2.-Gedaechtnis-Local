@@ -34,7 +34,11 @@ fun GlassCard(modifier: Modifier = Modifier, accent: Color? = null, content: @Co
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
         // Leicht transparent, damit der Hintergrundverlauf durchscheint.
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
+            // Bei transparenter Kartenfarbe explizit setzen, sonst fällt die Schrift auf Schwarz zurück.
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
         border = BorderStroke(1.dp, accent?.copy(alpha = 0.45f) ?: MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(18.dp), content = content)

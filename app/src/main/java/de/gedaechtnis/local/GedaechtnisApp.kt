@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentCallbacks2
 import de.gedaechtnis.local.ai.LocalAiEngine
+import de.gedaechtnis.local.ai.ModelManager
 import de.gedaechtnis.local.data.ContextRepository
 import de.gedaechtnis.local.data.SettingsRepository
 import de.gedaechtnis.local.data.UiStateStore
@@ -19,7 +20,8 @@ import kotlinx.coroutines.launch
 /** Einfacher manueller DI-Container – keine Reflection, kein Start-Overhead. */
 class AppContainer(app: Application) {
     val database: AppDatabase by lazy { AppDatabase.create(app) }
-    val ai: LocalAiEngine by lazy { LocalAiEngine(app) }
+    val models: ModelManager by lazy { ModelManager(app) }
+    val ai: LocalAiEngine by lazy { LocalAiEngine(app, models) }
     val settings: SettingsRepository by lazy { SettingsRepository(app) }
     val repository: ContextRepository by lazy { ContextRepository(app, database, ai) }
     val uiState: UiStateStore by lazy { UiStateStore(app) }

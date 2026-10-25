@@ -96,12 +96,14 @@ fun HomeScreen(contentPadding: PaddingValues, vm: HomeViewModel = viewModel()) {
     }
 
     LazyColumn(
-        // Statusleisten-Abstand außerhalb der Liste, damit beim Scrollen nichts darunter rutscht.
-        modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
+        // Abstände zu Status- und Navigationsleiste außerhalb der Liste: nichts rutscht darunter.
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
             top = 12.dp,
-            bottom = contentPadding.calculateBottomPadding() + 24.dp,
+            bottom = 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -170,7 +172,7 @@ private fun Header() {
                 Icon(Icons.Default.Shield, null, Modifier.size(14.dp), tint = SuccessGreen)
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "100 % lokal · keine Internet-Berechtigung",
+                    "100 % lokal · deine Daten verlassen nie das Gerät",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -196,7 +198,8 @@ private fun ServiceStatusCard(state: HomeUiState, onOpenAccessibility: () -> Uni
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 state.lastCaptureAt?.let {
                     Text(
-                        "Letzte Erfassung " + DateUtils.getRelativeTimeSpanString(it).toString().lowercase(),
+                        "Letzte Erfassung: " + if (System.currentTimeMillis() - it < 60_000) "gerade eben"
+                        else DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -239,7 +242,10 @@ private fun StatTile(label: String, value: String, unit: String?, accent: Color,
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 14.dp)) {

@@ -15,3 +15,13 @@
 
 # Room-Entities
 -keep class de.gedaechtnis.local.data.db.** { *; }
+
+# LiteRT-LM: JNI-Callbacks und per JSON (Gson) gelesene Klassen
+-keep class com.google.ai.edge.litertlm.** { *; }
+-dontwarn com.google.ai.edge.litertlm.**
+
+# Flogger (von MediaPipe genutzt) lädt sein Backend per Reflection; ohne diese Regel scheitert
+# die statische Initialisierung (ExceptionInInitializerError beim TextEmbedder).
+-keep class com.google.common.flogger.** { *; }
+-dontwarn com.google.common.flogger.**
+-keep class com.google.mediapipe.framework.** { *; }
