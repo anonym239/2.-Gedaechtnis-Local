@@ -227,10 +227,11 @@ private fun StatTile(label: String, value: String, unit: String?, accent: Color,
                 buildAnnotatedString {
                     append(value)
                     if (!unit.isNullOrEmpty()) {
-                        withStyle(SpanStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)) { append(" $unit") }
+                        withStyle(SpanStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)) { append("\u00A0$unit") }
                     }
                 },
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp),
+                // Längere Werte etwas kleiner setzen, damit Zahl + Einheit immer in eine Zeile passen.
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = if (value.length + (unit?.length ?: 0) > 6) 18.sp else 21.sp),
                 color = accent,
                 maxLines = 1,
                 softWrap = false,

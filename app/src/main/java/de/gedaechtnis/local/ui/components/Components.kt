@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import de.gedaechtnis.local.data.db.SnippetSource
+import java.util.Locale
 import de.gedaechtnis.local.ui.theme.NeonCyan
 import de.gedaechtnis.local.ui.theme.NeonViolet
 
@@ -85,9 +86,18 @@ fun highlight(text: String, rawTerms: List<String>, color: Color) = buildAnnotat
     }
 }
 
-fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
-    else -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
+/**
+ * Kompakte Größenangabe mit Einheit: "500 B", "12,3 KB", "104 MB", "1,2 GB".
+ * Ab drei Stellen ohne Nachkommastelle, damit die Angabe auch auf schmale Kacheln passt.
+ */
+fun formatBytes(bytes: Long): String {
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.coerceAtLeast(0).toDouble()
+    var i = 0
+    while (value >= 1024 && i < units.lastIndex) { value /= 1024; i++ }
+    val number = when {
+        i == 0 || value >= 100 -> "%.0f".format(Locale.GERMANY, value)
+        else -> "%.1f".format(Locale.GERMANY, value).removeSuffix(",0")
+    }
+    return "$number ${units[i]}"
 }
