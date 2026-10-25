@@ -95,7 +95,8 @@ Für ein Release:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-oder auf GitHub ein Release veröffentlichen. Die CI hängt dann `ZweitGedaechtnis-<version>-release.apk`,
+oder auf GitHub ein Release veröffentlichen, oder einen Commit mit `[release v1.2.3]` in der Nachricht pushen
+(bzw. den Workflow manuell mit dem Parameter `release_tag` starten). Dann legt die CI Tag und Release selbst an. Die CI hängt dann `ZweitGedaechtnis-<version>-release.apk`,
 `…-debug.apk` und `SHA256SUMS.txt` an das Release.
 
 **Signatur (optional):** Lege diese Repository-Secrets an:
