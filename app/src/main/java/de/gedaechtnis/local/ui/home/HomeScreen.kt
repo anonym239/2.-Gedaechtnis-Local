@@ -8,6 +8,15 @@ import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,10 +88,11 @@ fun HomeScreen(contentPadding: PaddingValues, vm: HomeViewModel = viewModel()) {
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        // Statusleisten-Abstand außerhalb der Liste, damit beim Scrollen nichts darunter rutscht.
+        modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 12.dp,
+            top = 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -193,19 +203,46 @@ private fun ServiceStatusCard(state: HomeUiState, onOpenAccessibility: () -> Uni
 
 @Composable
 private fun StatsRow(state: HomeUiState) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        StatTile("Ereignisse", "%,d".format(state.indexedCount).replace(',', '.'), NeonViolet, Modifier.weight(1f))
-        StatTile("Speicher", formatBytes(state.databaseBytes), NeonCyan, Modifier.weight(1f))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        StatTile("Ereignisse", "%,d".format(state.indexedCount).replace(',', '.'), null, NeonViolet, Modifier.weight(1f))
+        val (size, unit) = formatBytes(state.databaseBytes).split(' ').let { it[0] to it.getOrElse(1) { "" } }
+        StatTile("Speicher", size, unit, NeonCyan, Modifier.weight(1f))
         val pct = if (state.indexedCount == 0) 0 else state.embeddedCount * 100 / state.indexedCount
-        StatTile("Vektorisiert", "$pct %", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+        StatTile("Vektorisiert", "$pct", "%", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
     }
 }
 
+/** Kennzahl mit kleinerer Einheit, damit auch "104,4 MB" auf schmale Kacheln passt. */
 @Composable
-private fun StatTile(label: String, value: String, accent: Color, modifier: Modifier) {
-    GlassCard(modifier) {
-        Text(value, style = MaterialTheme.typography.titleLarge, color = accent, maxLines = 1)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun StatTile(label: String, value: String, unit: String?, accent: Color, modifier: Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 14.dp)) {
+            Text(
+                buildAnnotatedString {
+                    append(value)
+                    if (!unit.isNullOrEmpty()) {
+                        withStyle(SpanStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)) { append(" $unit") }
+                    }
+                },
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp),
+                color = accent,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -218,9 +255,9 @@ private fun AiStatusCard(state: HomeUiState) {
             Text("Lokale KI", style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(10.dp))
-        AiRow("Semantische Suche (Embeddings)", if (state.embedderAvailable) "bereit" else "nur Volltext", state.embedderAvailable)
+        AiRow("Semantische Suche (Embeddings)", if (state.embedderAvailable) "Bereit (offline, im App-Paket enthalten)" else "Nicht verfügbar – nur Volltextsuche", state.embedderAvailable)
         val (llmText, ok) = when (state.llmState) {
-            LlmState.NOT_INSTALLED -> "kein Modell – in Einstellungen importieren" to false
+            LlmState.NOT_INSTALLED -> "Kein Modell installiert – Empfehlung unter Einstellungen → Lokales Sprachmodell" to false
             LlmState.READY -> "bereit (${formatBytes(state.modelBytes)}, lädt bei Bedarf)" to true
             LlmState.LOADING -> "wird geladen …" to true
             LlmState.LOADED -> "im Speicher (${formatBytes(state.modelBytes)})" to true
@@ -232,11 +269,14 @@ private fun AiStatusCard(state: HomeUiState) {
 
 @Composable
 private fun AiRow(label: String, value: String, ok: Boolean) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(if (ok) SuccessGreen else WarningAmber, Modifier.size(8.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // Bezeichnung und Status untereinander: lange Texte brechen sauber um statt Buchstabe für Buchstabe.
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        StatusDot(if (ok) SuccessGreen else WarningAmber, Modifier.padding(top = 6.dp).size(8.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

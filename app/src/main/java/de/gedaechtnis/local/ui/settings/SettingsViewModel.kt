@@ -7,6 +7,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.gedaechtnis.local.GedaechtnisApp
 import de.gedaechtnis.local.ai.LlmState
+import de.gedaechtnis.local.ai.ModelCatalog
+import de.gedaechtnis.local.ai.ModelSuggestion
+import de.gedaechtnis.local.capture.OfflineSpeechStatus
+import de.gedaechtnis.local.capture.VoiceNoteRecognizer
 import de.gedaechtnis.local.data.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,8 +39,25 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     /** Text einer laufenden Langzeitaktion (z. B. Modell-Import) oder null. */
     val busy: StateFlow<String?> = _busy.asStateFlow()
 
+    val deviceRamGb: Int = ModelCatalog.deviceRamGb(app)
+    val recommendedModel: ModelSuggestion = ModelCatalog.recommendedFor(app)
+
+    private val _speechStatus = MutableStateFlow(OfflineSpeechStatus.UNKNOWN)
+    val speechStatus: StateFlow<OfflineSpeechStatus> = _speechStatus.asStateFlow()
+
     init {
         viewModelScope.launch { _apps.value = loadInstalledApps() }
+        refreshSpeechStatus()
+    }
+
+    /** Läuft auf dem Main-Thread (Vorgabe der SpeechRecognizer-API). */
+    fun refreshSpeechStatus() = viewModelScope.launch {
+        _speechStatus.value = VoiceNoteRecognizer.offlineStatus(getApplication())
+    }
+
+    fun downloadOfflineSpeech() {
+        VoiceNoteRecognizer.requestOfflineModel(getApplication())
+        _speechStatus.value = OfflineSpeechStatus.DOWNLOADING
     }
 
     fun setCapture(v: Boolean) = launch { repo.setCaptureEnabled(v) }

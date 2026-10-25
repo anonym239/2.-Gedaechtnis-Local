@@ -30,13 +30,23 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val container = (app as GedaechtnisApp).container
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
+    private val store = container.uiState
     private var job: Job? = null
+
+    init {
+        // Letzte Suche wiederherstellen: Treffer kommen schnell aus der lokalen DB, die gespeicherte
+        // Antwort wird übernommen, statt das LLM erneut rechnen zu lassen.
+        val lastQuery = store.lastQuery
+        if (lastQuery.isNotBlank()) restore(lastQuery, store.lastAnswer, store.lastAnswerGenerated)
+    }
 
     fun onQueryChange(q: String) = _state.update { it.copy(query = q) }
 
     fun search(q: String = _state.value.query) {
         if (q.isBlank()) return
         job?.cancel()
+        store.lastQuery = q
+        store.lastAnswer = null
         _state.update { it.copy(query = q, searching = true, answer = null, answering = false) }
         job = viewModelScope.launch {
             val result = container.repository.search(q)
@@ -44,17 +54,37 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             if (result.hits.isEmpty()) return@launch
 
             // Schnelle extraktive Antwort sofort anzeigen, LLM-Antwort (falls vorhanden) ersetzt sie.
-            _state.update { it.copy(answer = extractiveAnswer(result.hits), answerIsGenerated = false, answering = true) }
+            val extractive = extractiveAnswer(result.hits)
+            _state.update { it.copy(answer = extractive, answerIsGenerated = false, answering = true) }
             val generated = container.ai.answer(q, result.hits.take(6).map { it.snippet })
+            val final = generated?.takeIf { it.isNotBlank() }
             _state.update {
-                if (generated.isNullOrBlank()) it.copy(answering = false)
-                else it.copy(answer = generated, answerIsGenerated = true, answering = false)
+                if (final == null) it.copy(answering = false)
+                else it.copy(answer = final, answerIsGenerated = true, answering = false)
+            }
+            store.lastAnswer = final ?: extractive
+            store.lastAnswerGenerated = final != null
+        }
+    }
+
+    private fun restore(q: String, answer: String?, generated: Boolean) {
+        _state.update { it.copy(query = q, searching = true) }
+        job = viewModelScope.launch {
+            val result = container.repository.search(q)
+            _state.update {
+                it.copy(
+                    searching = false,
+                    result = result,
+                    answer = answer ?: result.hits.takeIf { h -> h.isNotEmpty() }?.let { h -> extractiveAnswer(h) },
+                    answerIsGenerated = answer != null && generated,
+                )
             }
         }
     }
 
     fun clear() {
         job?.cancel()
+        store.clearSearch()
         _state.value = SearchUiState()
     }
 

@@ -92,10 +92,11 @@ fun SearchScreen(contentPadding: PaddingValues, vm: SearchViewModel = viewModel(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        // Statusleisten-Abstand außerhalb der Liste, damit beim Scrollen nichts darunter rutscht.
+        modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 12.dp,
+            top = 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),

@@ -22,7 +22,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
@@ -31,6 +33,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import de.gedaechtnis.local.GedaechtnisApp
 import de.gedaechtnis.local.ui.home.HomeScreen
 import de.gedaechtnis.local.ui.search.SearchScreen
 import de.gedaechtnis.local.ui.settings.SettingsScreen
@@ -61,11 +64,18 @@ class MainActivity : ComponentActivity() {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
+        val uiState = (application as GedaechtnisApp).container.uiState
+
         setContent {
             ZweitGedaechtnisTheme {
                 val nav = rememberNavController()
                 val backStack by nav.currentBackStackEntryAsState()
                 val current = backStack?.destination?.route
+                // Beim Start dort weitermachen, wo der Nutzer die App verlassen hat.
+                val startRoute = remember {
+                    uiState.lastRoute?.takeIf { r -> Tab.entries.any { it.route == r } } ?: Tab.Home.route
+                }
+                LaunchedEffect(current) { current?.let { uiState.lastRoute = it } }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -94,7 +104,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 ) { padding ->
-                    NavHost(nav, startDestination = Tab.Home.route) {
+                    NavHost(nav, startDestination = startRoute) {
                         composable(Tab.Home.route) { HomeScreen(padding) }
                         composable(Tab.Search.route) { SearchScreen(padding) }
                         composable(Tab.Settings.route) { SettingsScreen(padding) }

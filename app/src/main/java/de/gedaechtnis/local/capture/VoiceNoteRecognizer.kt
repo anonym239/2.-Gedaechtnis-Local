@@ -4,9 +4,18 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
+import android.speech.RecognitionSupport
+import android.speech.RecognitionSupportCallback
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import androidx.annotation.RequiresApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+
+/** Verfügbarkeit des deutschen Offline-Sprachmodells. */
+enum class OfflineSpeechStatus { INSTALLED, DOWNLOADING, DOWNLOADABLE, UNSUPPORTED, UNKNOWN }
 
 /**
  * Sprachnotizen über die Android-Spracherkennung. Ab Android 12 wird – wenn vorhanden – die rein
@@ -46,6 +55,61 @@ class VoiceNoteRecognizer(
     fun stop() {
         recognizer?.destroy()
         recognizer = null
+    }
+
+    companion object {
+        private const val LANGUAGE = "de-DE"
+
+        private fun recognitionIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, LANGUAGE)
+
+        /** Prüft (ab Android 13), ob das deutsche Modell für die On-Device-Erkennung installiert ist. Main-Thread. */
+        suspend fun offlineStatus(context: Context): OfflineSpeechStatus {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return OfflineSpeechStatus.UNKNOWN
+            if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) return OfflineSpeechStatus.UNSUPPORTED
+            return checkSupport(context)
+        }
+
+        @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+        private suspend fun checkSupport(context: Context): OfflineSpeechStatus = suspendCancellableCoroutine { cont ->
+            val r = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            cont.invokeOnCancellation { r.destroy() }
+            r.checkRecognitionSupport(recognitionIntent(), context.mainExecutor, object : RecognitionSupportCallback {
+                override fun onSupportResult(support: RecognitionSupport) {
+                    fun List<String>.hasGerman() = any { it.equals(LANGUAGE, true) || it.startsWith("de", true) }
+                    val status = when {
+                        support.installedOnDeviceLanguages.hasGerman() -> OfflineSpeechStatus.INSTALLED
+                        support.pendingOnDeviceLanguages.hasGerman() -> OfflineSpeechStatus.DOWNLOADING
+                        support.supportedOnDeviceLanguages.hasGerman() -> OfflineSpeechStatus.DOWNLOADABLE
+                        else -> OfflineSpeechStatus.UNSUPPORTED
+                    }
+                    r.destroy()
+                    cont.resume(status)
+                }
+
+                override fun onError(error: Int) {
+                    r.destroy()
+                    cont.resume(OfflineSpeechStatus.UNKNOWN)
+                }
+            })
+        }
+
+        /**
+         * Lädt das deutsche Offline-Sprachmodell über den Systemdienst (ab Android 13).
+         * Auf älteren Versionen werden die System-Einstellungen für die Spracheingabe geöffnet.
+         */
+        fun requestOfflineModel(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+            ) {
+                val r = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                r.triggerModelDownload(recognitionIntent())
+                r.destroy()
+            } else {
+                context.startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
     }
 
     private val listener = object : RecognitionListener {

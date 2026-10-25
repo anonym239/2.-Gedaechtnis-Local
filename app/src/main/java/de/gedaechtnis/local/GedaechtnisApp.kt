@@ -7,6 +7,7 @@ import android.content.ComponentCallbacks2
 import de.gedaechtnis.local.ai.LocalAiEngine
 import de.gedaechtnis.local.data.ContextRepository
 import de.gedaechtnis.local.data.SettingsRepository
+import de.gedaechtnis.local.data.UiStateStore
 import de.gedaechtnis.local.data.db.AppDatabase
 import de.gedaechtnis.local.work.EmbeddingWorker
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,7 @@ class AppContainer(app: Application) {
     val ai: LocalAiEngine by lazy { LocalAiEngine(app) }
     val settings: SettingsRepository by lazy { SettingsRepository(app) }
     val repository: ContextRepository by lazy { ContextRepository(app, database, ai) }
+    val uiState: UiStateStore by lazy { UiStateStore(app) }
 }
 
 class GedaechtnisApp : Application() {

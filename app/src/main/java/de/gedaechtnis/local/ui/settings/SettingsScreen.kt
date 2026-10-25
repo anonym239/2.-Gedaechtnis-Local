@@ -3,7 +3,17 @@ package de.gedaechtnis.local.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.ui.platform.LocalUriHandler
+import de.gedaechtnis.local.ai.ModelCatalog
+import de.gedaechtnis.local.ai.ModelSuggestion
+import de.gedaechtnis.local.capture.OfflineSpeechStatus
+import de.gedaechtnis.local.ui.components.StatusDot
+import de.gedaechtnis.local.ui.theme.SuccessGreen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -58,7 +68,10 @@ fun SettingsScreen(contentPadding: PaddingValues, vm: SettingsViewModel = viewMo
     val apps by vm.apps.collectAsStateWithLifecycle()
     val llm by vm.llmState.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val speech by vm.speechStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val ramGb = vm.deviceRamGb
 
     var filter by rememberSaveable { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -72,10 +85,11 @@ fun SettingsScreen(contentPadding: PaddingValues, vm: SettingsViewModel = viewMo
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        // Statusleisten-Abstand außerhalb der Liste, damit beim Scrollen nichts darunter rutscht.
+        modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
-            top = contentPadding.calculateTopPadding() + 12.dp,
+            top = 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -135,23 +149,22 @@ fun SettingsScreen(contentPadding: PaddingValues, vm: SettingsViewModel = viewMo
         }
 
         // --- Lokales LLM -----------------------------------------------------------------------
-        item { SectionLabel("Lokales Sprachmodell") }
+        item { SectionLabel("Lokales Sprachmodell (Antworten)") }
         item {
             GlassCard(Modifier.fillMaxWidth()) {
                 Text(
                     when (llm) {
-                        LlmState.NOT_INSTALLED -> "Kein Modell installiert. Die Suche funktioniert trotzdem (Volltext + Embeddings)."
-                        LlmState.ERROR -> "Modell konnte nicht geladen werden. Bitte ein kompatibles .task-Modell wählen."
+                        LlmState.NOT_INSTALLED -> "Kein Modell installiert. Die Suche funktioniert trotzdem (Volltext + semantische Suche)."
+                        LlmState.ERROR -> "Modell konnte nicht geladen werden. Bitte eines der empfohlenen .task-Modelle wählen."
                         else -> "Modell installiert. Es wird nur bei Fragen geladen und nach 90 s wieder entladen."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "Empfohlen: Gemma 3 1B (int4, .task) aus der MediaPipe/LiteRT-Community auf Hugging Face. " +
-                        "Datei einmalig herunterladen und hier auswählen – sie wird in den privaten App-Speicher kopiert.",
-                    style = MaterialTheme.typography.bodySmall,
+                    "Dein Gerät: $ramGb GB RAM",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
                 busy?.let {
                     Spacer(Modifier.height(10.dp))
@@ -161,10 +174,60 @@ fun SettingsScreen(contentPadding: PaddingValues, vm: SettingsViewModel = viewMo
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { modelPicker.launch(arrayOf("*/*")) }, enabled = busy == null) {
-                        Text(if (llm == LlmState.NOT_INSTALLED) "Modell importieren" else "Modell ersetzen")
+                        Text(if (llm == LlmState.NOT_INSTALLED) "Modelldatei wählen" else "Modell ersetzen")
                     }
                     if (llm != LlmState.NOT_INSTALLED) {
                         OutlinedButton(onClick = vm::deleteModel, enabled = busy == null) { Text("Entfernen") }
+                    }
+                }
+            }
+        }
+        items(ModelCatalog.models, key = { it.id }) { model ->
+            ModelCard(
+                model = model,
+                recommended = model.id == vm.recommendedModel.id,
+                fitsDevice = model.minRamGb <= ramGb,
+                onOpen = { uriHandler.openUri(model.pageUrl) },
+            )
+        }
+        item {
+            Text(
+                "So geht’s: 1) Seite öffnen, bei Hugging Face anmelden und die Gemma-Lizenz akzeptieren. " +
+                    "2) Die genannte .task-Datei herunterladen. 3) Oben „Modelldatei wählen“ tippen und die Datei aus „Downloads“ auswählen. " +
+                    "Danach läuft alles offline; die heruntergeladene Datei kannst du anschließend löschen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
+
+        // --- Offline-Spracherkennung -----------------------------------------------------------
+        item { SectionLabel("Offline-Spracherkennung (Sprachnotizen)") }
+        item {
+            GlassCard(Modifier.fillMaxWidth()) {
+                val (text, ok) = when (speech) {
+                    OfflineSpeechStatus.INSTALLED -> "Deutsches Offline-Sprachpaket ist installiert." to true
+                    OfflineSpeechStatus.DOWNLOADING -> "Sprachpaket wird heruntergeladen … (kann einige Minuten dauern)" to true
+                    OfflineSpeechStatus.DOWNLOADABLE -> "Deutsches Offline-Sprachpaket ist noch nicht installiert." to false
+                    OfflineSpeechStatus.UNSUPPORTED -> "Dieses Gerät bietet keine reine On-Device-Erkennung. Lade in den System-Einstellungen das deutsche Offline-Paket der Spracheingabe." to false
+                    OfflineSpeechStatus.UNKNOWN -> "Status unbekannt. Über den Button kannst du das deutsche Offline-Paket laden bzw. prüfen." to false
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(if (ok) SuccessGreen else WarningAmber, Modifier.size(8.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                }
+                Text(
+                    "Die Erkennung läuft über den Spracherkennungsdienst des Systems. Mit installiertem Paket funktionieren Sprachnotizen ohne Internet und schneller.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                if (speech != OfflineSpeechStatus.INSTALLED) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = vm::downloadOfflineSpeech) { Text("Sprachpaket laden") }
+                        OutlinedButton(onClick = { vm.refreshSpeechStatus() }) { Text("Erneut prüfen") }
                     }
                 }
             }
@@ -242,6 +305,46 @@ fun SettingsScreen(contentPadding: PaddingValues, vm: SettingsViewModel = viewMo
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Abbrechen") } },
         )
     }
+}
+
+@Composable
+private fun ModelCard(model: ModelSuggestion, recommended: Boolean, fitsDevice: Boolean, onOpen: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth(), accent = if (recommended) MaterialTheme.colorScheme.primary else null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(model.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(model.sizeLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+            if (recommended) Badge("Für dein Gerät empfohlen", MaterialTheme.colorScheme.primary)
+            if (model.experimental) Badge("Experimentell", WarningAmber)
+            if (!fitsDevice) Badge("Zu wenig RAM (ab ${model.minRamGb} GB)", MaterialTheme.colorScheme.error)
+        }
+        Text(model.description, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+        Text(
+            "Datei: ${model.fileName}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(onClick = onOpen) {
+            Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Download-Seite öffnen")
+        }
+    }
+}
+
+@Composable
+private fun Badge(text: String, color: androidx.compose.ui.graphics.Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
