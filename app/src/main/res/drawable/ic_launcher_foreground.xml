@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stilisierter Knoten-Graph (Kontext-Graph) in Neon-Violett und Cyan -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:strokeColor="#FF7C5CFF"
+        android:strokeWidth="3"
+        android:pathData="M40,42 L68,36 M40,42 L54,70 M68,36 L54,70 M68,36 L76,62 M54,70 L76,62" />
+    <path android:fillColor="#FFB388FF" android:pathData="M40,42m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+    <path android:fillColor="#FF22D3EE" android:pathData="M68,36m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+    <path android:fillColor="#FFB388FF" android:pathData="M54,70m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+    <path android:fillColor="#FF22D3EE" android:pathData="M76,62m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+</vector>

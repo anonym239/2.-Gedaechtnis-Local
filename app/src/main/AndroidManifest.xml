@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        DATENSCHUTZ: Die App fordert bewusst KEINE Internet-Berechtigung an.
+        Transitive Abhängigkeiten (z. B. ML-Kit-Telemetrie) dürfen sie ebenfalls nicht einschleusen.
+        Damit ist technisch garantiert, dass keine Daten das Gerät verlassen.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+
+    <!-- Persistente, stille Status-Benachrichtigung ("Gedächtnis aktiv") -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Sprachnotizen über die On-Device-Spracherkennung -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <queries>
+        <!-- Für die App-Sperrliste: installierte Apps mit Launcher-Eintrag auflisten -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Für Sprachnotizen: verfügbaren Spracherkennungsdienst finden -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".GedaechtnisApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ZweitGedaechtnis"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Bildschirm-Kontext über einen AccessibilityService:
+            * liest primär den Text-Baum der Views (kein Bild, kaum CPU),
+            * nutzt nur bei textarmen Ansichten (PDF, Bilder) takeScreenshot() + ML Kit OCR.
+            Der Dienst wird vom System gebunden und benötigt daher keinen eigenen Foreground-Service.
+        -->
+        <service
+            android:name=".capture.ScreenContextService"
+            android:exported="false"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

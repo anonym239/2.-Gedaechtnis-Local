@@ -1,0 +1,110 @@
+name: Android CI/CD
+
+# Baut bei jedem Push/PR (Kompilierung + Unit-Tests) und hängt bei Releases
+# automatisch die fertigen APKs als Release-Assets an.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # nötig, um Release-Assets hochzuladen
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # Optionale Release-Signatur (Repository → Settings → Secrets and variables → Actions).
+      # Fehlen die Secrets, wird die Release-APK mit dem Debug-Key signiert (installierbar, aber nicht Play-Store-tauglich).
+      SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+      SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+      SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+      SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle einrichten (inkl. Cache & Wrapper-Validierung)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Version bestimmen
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="0.0.${GITHUB_RUN_NUMBER}-dev"
+          fi
+          echo "name=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (${GITHUB_RUN_NUMBER})"
+
+      - name: Keystore dekodieren (falls vorhanden)
+        if: env.SIGNING_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Unit-Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: APKs bauen
+        run: >
+          ./gradlew assembleDebug assembleRelease --stacktrace
+          -PversionName=${{ steps.version.outputs.name }}
+          -PversionCode=${{ steps.version.outputs.code }}
+
+      - name: APKs umbenennen
+        run: |
+          mkdir -p dist
+          V="${{ steps.version.outputs.name }}"
+          cp app/build/outputs/apk/release/app-release.apk "dist/ZweitGedaechtnis-${V}-release.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk     "dist/ZweitGedaechtnis-${V}-debug.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: APKs als Workflow-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZweitGedaechtnis-${{ steps.version.outputs.name }}
+          path: dist/*
+          retention-days: 14
+
+      - name: Lint-Bericht hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: app/build/reports/
+          if-no-files-found: ignore
+
+      - name: Release-Assets veröffentlichen
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+          generate_release_notes: true

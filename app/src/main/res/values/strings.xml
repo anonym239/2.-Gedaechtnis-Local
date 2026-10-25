@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zweit-Gedächtnis</string>
+    <string name="accessibility_service_label">Zweit-Gedächtnis – Bildschirmkontext</string>
+    <string name="accessibility_service_description">Liest sichtbare Texte auf dem Bildschirm und speichert sie ausschließlich lokal auf diesem Gerät, damit du später danach suchen kannst. Apps auf der Sperrliste sowie Passwortfelder werden nie erfasst. Die App besitzt keine Internet-Berechtigung.</string>
+    <string name="notification_channel_name">Gedächtnis-Status</string>
+    <string name="notification_channel_description">Zeigt an, ob das Zweit-Gedächtnis gerade Bildschirmkontext erfasst.</string>
+    <string name="notification_title">Zweit-Gedächtnis aktiv</string>
+    <string name="notification_text">Bildschirmkontext wird lokal indexiert.</string>
+    <string name="notification_paused">Aufzeichnung pausiert</string>
+</resources>

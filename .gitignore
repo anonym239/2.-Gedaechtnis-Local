@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+/local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+*.keystore
+*.jks
+# Wird beim Build automatisch heruntergeladen (siehe app/build.gradle.kts)
+app/src/main/assets/universal_sentence_encoder.tflite
