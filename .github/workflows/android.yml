@@ -10,6 +10,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release-Tag (z. B. v1.0.0). Leer lassen = nur bauen."
+        required: false
+        default: ""
 
 permissions:
   contents: write   # nötig, um Release-Assets hochzuladen
@@ -48,7 +53,10 @@ jobs:
       - name: Version bestimmen
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ -n "${{ inputs.release_tag }}" ]]; then
+            VERSION="${{ inputs.release_tag }}"
+            VERSION="${VERSION#v}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
@@ -100,10 +108,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Release-Assets veröffentlichen
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          # Bei manuellem Start legt die Action Tag und Release auf dem gebauten Commit selbst an.
+          tag_name: ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Zweit-Gedächtnis ${{ inputs.release_tag || github.event.release.tag_name || github.ref_name }}
           files: |
             dist/*.apk
             dist/SHA256SUMS.txt
