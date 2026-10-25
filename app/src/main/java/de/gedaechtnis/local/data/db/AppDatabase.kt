@@ -28,7 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, NAME)
                 // WAL: Erfassung (Schreiben) und Suche (Lesen) blockieren sich nicht gegenseitig.
-                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
     }
 }
