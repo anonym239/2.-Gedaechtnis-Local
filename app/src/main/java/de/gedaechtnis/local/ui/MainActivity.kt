@@ -106,7 +106,15 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     NavHost(nav, startDestination = startRoute) {
                         composable(Tab.Home.route) { HomeScreen(padding) }
-                        composable(Tab.Search.route) { SearchScreen(padding) }
+                        composable(Tab.Search.route) {
+                            SearchScreen(padding, onOpenSettings = {
+                                nav.navigate(Tab.Settings.route) {
+                                    popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            })
+                        }
                         composable(Tab.Settings.route) { SettingsScreen(padding) }
                     }
                 }

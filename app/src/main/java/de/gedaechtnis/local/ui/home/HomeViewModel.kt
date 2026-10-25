@@ -6,6 +6,7 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.gedaechtnis.local.GedaechtnisApp
+import de.gedaechtnis.local.ai.EmbedderKind
 import de.gedaechtnis.local.ai.LlmState
 import de.gedaechtnis.local.capture.ScreenContextService
 import de.gedaechtnis.local.data.db.AppCount
@@ -31,7 +32,8 @@ data class HomeUiState(
     val modelBytes: Long = 0,
     val topApps: List<AppCount> = emptyList(),
     val recent: List<ContextSnippet> = emptyList(),
-    val embedderAvailable: Boolean = false,
+    val embedderKind: EmbedderKind = EmbedderKind.MEDIAPIPE,
+    val embedderError: String? = null,
     val llmState: LlmState = LlmState.NOT_INSTALLED,
 )
 
@@ -44,13 +46,23 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val sizes = MutableStateFlow(0L to 0L)
 
     private data class Counts(val count: Int, val embedded: Int, val last: Long?)
-    private data class Status(val enabled: Boolean, val running: Boolean, val capture: Boolean, val llm: LlmState)
+    private data class Status(
+        val enabled: Boolean,
+        val running: Boolean,
+        val capture: Boolean,
+        val llm: LlmState,
+        val embedder: EmbedderKind,
+    )
 
     private val counts = combine(repo.count, repo.embeddedCount, repo.lastCaptureAt) { c, e, l -> Counts(c, e, l) }
     private val lists = combine(repo.topApps(5), repo.recent(6)) { top, recent -> top to recent }
-    private val status = combine(serviceEnabled, ScreenContextService.running, container.settings.settings, container.ai.llmState) { en, run, s, llm ->
-        Status(en, run, s.captureEnabled, llm)
-    }
+    private val status = combine(
+        serviceEnabled,
+        ScreenContextService.running,
+        container.settings.settings,
+        container.ai.llmState,
+        container.ai.embedderKind,
+    ) { en, run, s, llm, emb -> Status(en, run, s.captureEnabled, llm, emb) }
 
     val state: StateFlow<HomeUiState> = combine(counts, lists, status, sizes) { c, l, st, sz ->
         HomeUiState(
@@ -65,7 +77,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             modelBytes = sz.second,
             topApps = l.first,
             recent = l.second,
-            embedderAvailable = container.ai.isEmbedderAvailable,
+            embedderKind = st.embedder,
+            embedderError = container.ai.embedderError,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 

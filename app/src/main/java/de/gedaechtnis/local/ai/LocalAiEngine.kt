@@ -25,6 +25,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** Welches Verfahren die semantische Suche gerade nutzt. */
+enum class EmbedderKind { MEDIAPIPE, FALLBACK }
+
 /** Zustand des generativen Modells für die UI. */
 enum class LlmState { NOT_INSTALLED, READY, LOADING, LOADED, ERROR }
 
@@ -44,7 +47,7 @@ class LocalAiEngine(private val context: Context) {
 
     private val embedderMutex = Mutex()
     private var embedder: TextEmbedder? = null
-    private var embedderFailed = false
+    @Volatile private var embedderFailed = false
 
     private val llmMutex = Mutex()
     private var llm: LlmInference? = null
@@ -55,24 +58,43 @@ class LocalAiEngine(private val context: Context) {
 
     val llmModelFile: File get() = File(context.filesDir, "models/$LLM_FILE_NAME")
 
-    val isEmbedderAvailable: Boolean by lazy {
+    private val hasEmbedderAsset: Boolean by lazy {
         runCatching { context.assets.list("")?.contains(EMBEDDER_ASSET) == true }.getOrDefault(false)
     }
+
+    /** Semantische Suche ist immer verfügbar – notfalls über das Ersatzverfahren. */
+    val isEmbedderAvailable: Boolean = true
+
+    private val _embedderKind = MutableStateFlow(if (hasEmbedderAsset) EmbedderKind.MEDIAPIPE else EmbedderKind.FALLBACK)
+    val embedderKind: StateFlow<EmbedderKind> = _embedderKind.asStateFlow()
+
+    /** Fehlermeldung, falls MediaPipe nicht starten konnte (für die Anzeige im Dashboard). */
+    @Volatile var embedderError: String? = null
+        private set
 
     // ------------------------------------------------------------------------------------------
     // Embeddings
     // ------------------------------------------------------------------------------------------
 
-    /** Liefert einen L2-normalisierten Vektor oder null, wenn kein Embedding-Modell verfügbar ist. */
+    /**
+     * Liefert einen L2-normalisierten Vektor. Primär MediaPipe (Universal Sentence Encoder);
+     * kann das Modell nicht geladen werden, greift das robuste [HashingEmbedder]-Ersatzverfahren.
+     * Vektoren beider Verfahren haben unterschiedliche Längen und werden nie miteinander verglichen.
+     */
     suspend fun embed(text: String): FloatArray? = withContext(Dispatchers.Default) {
-        if (!isEmbedderAvailable || embedderFailed || text.isBlank()) return@withContext null
+        if (text.isBlank()) return@withContext null
+        val input = text.take(MAX_EMBED_CHARS)
         embedderMutex.withLock {
-            val e = embedder ?: createEmbedder() ?: return@withLock null
-            runCatching {
-                val raw = e.embed(text.take(MAX_EMBED_CHARS))
-                    .embeddingResult().embeddings()[0].floatEmbedding()
-                VectorMath.normalize(raw)
-            }.onFailure { Log.w(TAG, "Embedding fehlgeschlagen", it) }.getOrNull()
+            val e = if (hasEmbedderAsset && !embedderFailed) embedder ?: createEmbedder() else null
+            if (e != null) {
+                runCatching {
+                    VectorMath.normalize(e.embed(input).embeddingResult().embeddings()[0].floatEmbedding())
+                }.onFailure {
+                    Log.w(TAG, "Embedding fehlgeschlagen – nutze Ersatzverfahren", it)
+                    markEmbedderFailed(it)
+                }.getOrNull()?.let { return@withLock it }
+            }
+            HashingEmbedder.embed(input)
         }
     }
 
@@ -82,9 +104,15 @@ class LocalAiEngine(private val context: Context) {
             .build()
         TextEmbedder.createFromOptions(context, options).also { embedder = it }
     }.onFailure {
-        embedderFailed = true
         Log.e(TAG, "TextEmbedder konnte nicht geladen werden", it)
+        markEmbedderFailed(it)
     }.getOrNull()
+
+    private fun markEmbedderFailed(t: Throwable) {
+        embedderFailed = true
+        embedderError = "${t.javaClass.simpleName}: ${t.message ?: "unbekannt"}".take(200)
+        _embedderKind.value = EmbedderKind.FALLBACK
+    }
 
     // ------------------------------------------------------------------------------------------
     // Generative Antwort (RAG)
@@ -94,13 +122,18 @@ class LocalAiEngine(private val context: Context) {
      * Beantwortet [question] ausschließlich anhand der übergebenen Kontext-Snippets.
      * Gibt null zurück, wenn kein LLM installiert ist oder zu wenig RAM frei ist.
      */
-    suspend fun answer(question: String, contexts: List<ContextSnippet>): String? = withContext(Dispatchers.Default) {
+    suspend fun answer(
+        question: String,
+        contexts: List<ContextSnippet>,
+        summary: Boolean = false,
+        periodLabel: String? = null,
+    ): String? = withContext(Dispatchers.Default) {
         if (contexts.isEmpty() || !llmModelFile.exists()) return@withContext null
         llmMutex.withLock {
             releaseJob?.cancel()
             val engine = llm ?: loadLlm() ?: return@withLock null
             try {
-                engine.generateResponse(buildPrompt(question, contexts)).trim()
+                engine.generateResponse(buildPrompt(question, contexts, summary, periodLabel)).trim()
             } catch (t: Throwable) {
                 Log.e(TAG, "LLM-Generierung fehlgeschlagen", t)
                 null
@@ -161,21 +194,40 @@ class LocalAiEngine(private val context: Context) {
         return info.availMem > modelBytes + 300L * 1024 * 1024
     }
 
-    private fun buildPrompt(question: String, contexts: List<ContextSnippet>): String {
+    private fun buildPrompt(question: String, contexts: List<ContextSnippet>, summary: Boolean, periodLabel: String?): String {
         val fmt = SimpleDateFormat("EEEE, dd.MM. HH:mm", Locale.GERMANY)
+        // Für Zusammenfassungen gleichmäßig über den Zeitraum verteilte Ausschnitte, sonst die besten Treffer.
+        val picked = if (summary) {
+            val chrono = contexts.sortedBy { it.timestamp }
+            val step = maxOf(1, chrono.size / MAX_SUMMARY_SNIPPETS)
+            chrono.filterIndexed { i, _ -> i % step == 0 }.take(MAX_SUMMARY_SNIPPETS)
+        } else contexts.take(6)
+        val perSnippet = if (summary) 220 else 600
+
         val sb = StringBuilder()
         var budget = MAX_CONTEXT_CHARS
-        contexts.forEachIndexed { i, s ->
+        picked.forEachIndexed { i, s ->
             if (budget <= 0) return@forEachIndexed
-            val text = s.text.replace(Regex("\\s+"), " ").take(minOf(600, budget))
+            val text = s.text.replace(Regex("\\s+"), " ").take(minOf(perSnippet, budget))
             budget -= text.length
             sb.append("[${i + 1}] ${fmt.format(Date(s.timestamp))} · ${s.appLabel}")
             s.windowTitle?.takeIf { it.isNotBlank() }?.let { sb.append(" · ").append(it) }
             sb.append('\n').append(text).append("\n\n")
         }
+
+        val task = if (summary) {
+            "Fasse in 3 bis 5 kurzen, vollständigen Sätzen auf Deutsch zusammen, womit sich der Nutzer " +
+                "${periodLabel?.lowercase() ?: "in diesem Zeitraum"} beschäftigt hat. Nenne die wichtigsten Themen und Apps. " +
+                "Schreibe in der Du-Form (\"Du hast …\"). Gib keine Rohtexte wieder und erfinde nichts."
+        } else {
+            "Beantworte die Frage in 1 bis 3 vollständigen Sätzen auf Deutsch in der Du-Form. Formuliere die Antwort selbst " +
+                "und zitiere nur kurze, entscheidende Stellen. Nenne App und Zeitpunkt der Quelle. " +
+                "Wenn die Notizen die Antwort nicht enthalten, sage das ehrlich."
+        }
         // Gemma-Chat-Template; andere Modelle ignorieren die Marker weitgehend.
         return """<start_of_turn>user
-Du bist ein persönliches Gedächtnis. Beantworte die Frage kurz auf Deutsch und NUR anhand der folgenden Notizen vom Bildschirm des Nutzers. Nenne App und Zeitpunkt der Quelle als [Nummer]. Wenn die Notizen die Antwort nicht enthalten, sage das ehrlich.
+Du bist ein persönlicher Gedächtnis-Assistent. Dir liegen Notizen vor, die automatisch vom Bildschirm des Nutzers erfasst wurden.
+$task
 
 Notizen:
 $sb
@@ -220,6 +272,7 @@ Frage: $question<end_of_turn>
         private const val MAX_EMBED_CHARS = 2000
         private const val MAX_TOKENS = 1280
         private const val MAX_CONTEXT_CHARS = 2800
+        private const val MAX_SUMMARY_SNIPPETS = 12
         private const val LLM_IDLE_RELEASE_MS = 90_000L
     }
 }

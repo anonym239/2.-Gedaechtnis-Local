@@ -59,6 +59,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.sp
+import de.gedaechtnis.local.ai.AnswerPoint
+import de.gedaechtnis.local.ai.ComposedAnswer
 import de.gedaechtnis.local.data.SearchHit
 import de.gedaechtnis.local.ui.components.GlassCard
 import de.gedaechtnis.local.ui.components.highlight
@@ -79,7 +83,11 @@ private val SUGGESTIONS = listOf(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun SearchScreen(contentPadding: PaddingValues, vm: SearchViewModel = viewModel()) {
+fun SearchScreen(
+    contentPadding: PaddingValues,
+    onOpenSettings: () -> Unit = {},
+    vm: SearchViewModel = viewModel(),
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     val submit: (String) -> Unit = { focus.clearFocus(); vm.search(it) }
@@ -150,7 +158,13 @@ fun SearchScreen(contentPadding: PaddingValues, vm: SearchViewModel = viewModel(
                     add("${result.hits.size} Treffer")
                     result.query.timeLabel?.let { add("Zeitraum: $it") }
                     if (result.query.keywords.isNotEmpty()) add("Begriffe: " + result.query.keywords.joinToString(", "))
-                    add(if (result.usedSemanticSearch) "Hybrid-Suche" else "Volltext")
+                    add(
+                        when {
+                            result.query.keywords.isEmpty() -> "Überblick"
+                            result.usedSemanticSearch -> "Hybrid-Suche"
+                            else -> "Volltext"
+                        },
+                    )
                 }
                 Text(
                     meta.joinToString(" · "),
@@ -173,8 +187,16 @@ fun SearchScreen(contentPadding: PaddingValues, vm: SearchViewModel = viewModel(
             }
         }
 
-        state.answer?.let { answer ->
-            item { AnswerCard(answer, state.answerIsGenerated, state.answering) }
+        state.result?.composed?.let { composed ->
+            item {
+                AnswerCard(
+                    composed = composed,
+                    generated = state.generated,
+                    answering = state.answering,
+                    llmInstalled = state.llmInstalled,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
         }
 
         groups.forEach { (day, hits) ->
@@ -187,28 +209,77 @@ fun SearchScreen(contentPadding: PaddingValues, vm: SearchViewModel = viewModel(
 }
 
 @Composable
-private fun AnswerCard(answer: String, generated: Boolean, answering: Boolean) {
+private fun AnswerCard(
+    composed: ComposedAnswer,
+    generated: String?,
+    answering: Boolean,
+    llmInstalled: Boolean,
+    onOpenSettings: () -> Unit,
+) {
     GlassCard(Modifier.fillMaxWidth().animateContentSize(), accent = NeonViolet) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.AutoAwesome, null, tint = NeonViolet, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-                if (generated) "Antwort (lokales LLM)" else "Antwort",
+                if (generated != null) "KI-Antwort (lokal)" else "Antwort",
                 style = MaterialTheme.typography.labelLarge,
                 color = NeonViolet,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(answer, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(10.dp))
+
+        // Kernaussage: LLM-Text, sonst der regelbasiert formulierte Satz.
+        Text(
+            generated ?: composed.headline,
+            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+        )
+
+        if (composed.points.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            if (generated != null) {
+                Text("Grundlage", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+            }
+            composed.points.forEach { p -> AnswerPointRow(p) }
+        }
+        composed.footer?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
         if (answering) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(Modifier.fillMaxWidth(), color = NeonViolet)
             Text(
-                "KI formuliert eine Antwort auf dem Gerät …",
+                "Die KI formuliert eine ausführlichere Antwort auf dem Gerät …",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+        } else if (!llmInstalled) {
+            TextButton(onClick = onOpenSettings, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Noch bessere Antworten: Sprachmodell installieren →", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnswerPointRow(p: AnswerPoint) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        Box(Modifier.padding(top = 7.dp).size(6.dp).background(NeonCyan, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "${p.appLabel} · ${p.timeLabel}",
+                style = MaterialTheme.typography.labelMedium,
+                color = NeonCyan,
+            )
+            Text(p.text, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

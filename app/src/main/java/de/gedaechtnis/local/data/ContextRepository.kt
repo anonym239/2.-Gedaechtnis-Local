@@ -1,6 +1,9 @@
 package de.gedaechtnis.local.data
 
 import android.content.Context
+import de.gedaechtnis.local.ai.AnswerComposer
+import de.gedaechtnis.local.ai.AnswerSource
+import de.gedaechtnis.local.ai.ComposedAnswer
 import de.gedaechtnis.local.ai.LocalAiEngine
 import de.gedaechtnis.local.ai.ParsedQuery
 import de.gedaechtnis.local.ai.QueryParser
@@ -22,6 +25,8 @@ data class SearchResult(
     val query: ParsedQuery,
     val hits: List<SearchHit>,
     val usedSemanticSearch: Boolean,
+    /** Ausformulierte Antwort ohne LLM (sofort verfügbar). */
+    val composed: ComposedAnswer? = null,
 )
 
 /**
@@ -87,6 +92,14 @@ class ContextRepository(
 
     suspend fun search(rawQuery: String, limit: Int = 40): SearchResult = withContext(Dispatchers.Default) {
         val q = QueryParser.parse(rawQuery)
+
+        // Überblicksfrage ohne Suchbegriffe ("Was habe ich heute gemacht?") → alles aus dem Zeitraum.
+        if (q.keywords.isEmpty()) {
+            val all = dao.inRange(q.from, q.to, SUMMARY_LIMIT)
+            val hits = all.mapIndexed { rank, s -> SearchHit(s, 1.0 / (RRF_K + rank), emptyList()) }
+            return@withContext SearchResult(q, hits, usedSemanticSearch = false, composed = compose(q, hits))
+        }
+
         val rrf = HashMap<Long, Double>()
         val byId = HashMap<Long, ContextSnippet>()
 
@@ -103,10 +116,12 @@ class ContextRepository(
 
         // 2) Semantisch
         var semantic = false
-        val queryVec = ai.embed(if (q.keywords.isEmpty()) rawQuery else q.keywords.joinToString(" "))
+        val queryVec = ai.embed(q.keywords.joinToString(" "))
         if (queryVec != null) {
             semantic = true
             val scored = dao.embeddingsInRange(q.from, q.to, VECTOR_SCAN_LIMIT)
+                // Nur Vektoren desselben Verfahrens vergleichen (MediaPipe vs. Ersatz haben andere Längen).
+                .filter { it.embedding.size == queryVec.size * 4 }
                 .map { it.id to VectorMath.dot(queryVec, VectorMath.fromBytes(it.embedding)) }
                 .filter { it.second >= MIN_SIMILARITY }
                 .sortedByDescending { it.second }
@@ -116,22 +131,17 @@ class ContextRepository(
             missing.chunked(500).forEach { chunk -> dao.byIds(chunk).forEach { byId[it.id] = it } }
         }
 
-        // 3) Nur Zeitangabe, keine Begriffe ("Was war gestern?") → chronologische Liste.
-        if (rrf.isEmpty() && q.keywords.isEmpty() && q.timeLabel != null) {
-            dao.inRange(q.from, q.to, limit).forEachIndexed { rank, s ->
-                byId[s.id] = s
-                rrf[s.id] = 1.0 / (RRF_K + rank)
-            }
-        }
-
         val hits = rrf.entries
             .sortedByDescending { it.value }
             .take(limit)
             .mapNotNull { (id, score) ->
                 byId[id]?.let { s -> SearchHit(s, score, q.keywords.filter { s.text.contains(it, ignoreCase = true) }) }
             }
-        SearchResult(q, hits, semantic)
+        SearchResult(q, hits, semantic, compose(q, hits))
     }
+
+    private fun compose(q: ParsedQuery, hits: List<SearchHit>): ComposedAnswer? =
+        AnswerComposer.compose(q, hits.map { AnswerSource(it.snippet.timestamp, it.snippet.appLabel, it.snippet.windowTitle, it.snippet.text) })
 
     /** Berechnet fehlende Embeddings in kleinen Stapeln. Gibt die Anzahl verarbeiteter Snippets zurück. */
     suspend fun embedPending(batchSize: Int = 64): Int {
@@ -179,5 +189,6 @@ class ContextRepository(
         private const val VECTOR_SCAN_LIMIT = 20_000
         private const val MIN_SIMILARITY = 0.25f
         private const val RRF_K = 60.0
+        private const val SUMMARY_LIMIT = 150
     }
 }

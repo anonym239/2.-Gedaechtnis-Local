@@ -17,6 +17,8 @@ data class ParsedQuery(
     val from: Long,
     val to: Long,
     val timeLabel: String?,
+    /** Bittet um einen Überblick ("Was habe ich heute gemacht?") statt nach etwas Konkretem zu fragen. */
+    val isSummary: Boolean = false,
 )
 
 /**
@@ -51,8 +53,19 @@ object QueryParser {
         "nochmal", "eigentlich", "denn", "dass", "daß", "ob", "sich", "sein", "seine", "kann", "könnte",
         "zeig", "zeige", "finde", "such", "suche", "the", "a", "of", "what", "was", "for", "about",
         "uhr", "tag", "tage", "tagen", "woche", "monat", "stunde", "stunden", "einer", "heute", "gestern",
-        "vorgestern",
+        "vorgestern", "alles", "alle", "allem", "bitte", "genau", "uns", "zeigen", "sag", "sage",
+        "gibt", "gab", "gerade", "vorhin", "irgendwas", "irgendwie", "dazu", "davon", "darüber",
     ) + LAST_WORDS + THIS_WORDS
+
+    /** Wörter, die nach einer Zusammenfassung statt nach einem konkreten Inhalt fragen. */
+    private val SUMMARY_WORDS = setOf(
+        "gemacht", "getan", "passiert", "erledigt", "gearbeitet", "gelesen", "angeschaut", "geschaut",
+        "angesehen", "zusammenfassung", "zusammenfassen", "zusammen", "fasse", "überblick", "ueberblick",
+        "überblicke", "rückblick", "tagesrückblick", "beschäftigt", "unternommen", "los",
+    )
+
+    /** Für andere Komponenten (Themen-Extraktion), damit Füllwörter einheitlich gefiltert werden. */
+    val STOPWORDS_PUBLIC: Set<String> = STOPWORDS + SUMMARY_WORDS
 
     private val TOKEN_REGEX = Regex("[\\p{L}\\p{N}]+")
 
@@ -132,13 +145,14 @@ object QueryParser {
             val base = if (singleDay) from!! else startOfToday
             from = base.with(LocalTime.of(part.first, 0))
             to = if (part.second == 24) base.plusDays(1) else base.with(LocalTime.of(part.second, 0))
-            label = (label?.let { "$it, " } ?: "") + tokens[i].replaceFirstChar { it.uppercase() }
+            label = (label ?: "Heute") + " " + tokens[i]
             consumed[i] = true
         }
 
         val keywords = tokens.filterIndexed { i, t ->
-            !consumed[i] && t !in STOPWORDS && t !in DAY_PARTS && (t.length >= 2 || t.all { it.isDigit() })
+            !consumed[i] && t !in STOPWORDS && t !in SUMMARY_WORDS && t !in DAY_PARTS && (t.length >= 2 || t.all { it.isDigit() })
         }.distinct()
+        val isSummary = keywords.isEmpty() || tokens.any { it in SUMMARY_WORDS }
 
         return ParsedQuery(
             raw = query.trim(),
@@ -146,6 +160,7 @@ object QueryParser {
             from = from?.toInstant()?.toEpochMilli() ?: 0L,
             to = to?.toInstant()?.toEpochMilli() ?: Long.MAX_VALUE,
             timeLabel = label,
+            isSummary = isSummary,
         )
     }
 

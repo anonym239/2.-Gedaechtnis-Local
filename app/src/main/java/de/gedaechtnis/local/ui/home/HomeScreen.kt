@@ -63,6 +63,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.gedaechtnis.local.ai.EmbedderKind
 import de.gedaechtnis.local.ai.LlmState
 import de.gedaechtnis.local.capture.VoiceNoteRecognizer
 import de.gedaechtnis.local.data.db.ContextSnippet
@@ -255,7 +256,14 @@ private fun AiStatusCard(state: HomeUiState) {
             Text("Lokale KI", style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(10.dp))
-        AiRow("Semantische Suche (Embeddings)", if (state.embedderAvailable) "Bereit (offline, im App-Paket enthalten)" else "Nicht verfügbar – nur Volltextsuche", state.embedderAvailable)
+        when (state.embedderKind) {
+            EmbedderKind.MEDIAPIPE -> AiRow("Semantische Suche", "Bereit (MediaPipe, offline im App-Paket)", true)
+            EmbedderKind.FALLBACK -> AiRow(
+                "Semantische Suche",
+                "Ersatzverfahren aktiv (Wortteil-Abgleich)" + (state.embedderError?.let { "\nMediaPipe-Fehler: $it" } ?: ""),
+                true,
+            )
+        }
         val (llmText, ok) = when (state.llmState) {
             LlmState.NOT_INSTALLED -> "Kein Modell installiert – Empfehlung unter Einstellungen → Lokales Sprachmodell" to false
             LlmState.READY -> "bereit (${formatBytes(state.modelBytes)}, lädt bei Bedarf)" to true

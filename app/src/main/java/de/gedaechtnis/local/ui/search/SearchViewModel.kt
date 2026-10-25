@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.gedaechtnis.local.GedaechtnisApp
-import de.gedaechtnis.local.data.SearchHit
+import de.gedaechtnis.local.ai.LlmState
 import de.gedaechtnis.local.data.SearchResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,17 +12,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class SearchUiState(
     val query: String = "",
     val searching: Boolean = false,
     val result: SearchResult? = null,
-    val answer: String? = null,
-    val answerIsGenerated: Boolean = false,
+    /** Vom lokalen LLM formulierte Antwort; ersetzt die regelbasierte Antwort aus [SearchResult.composed]. */
+    val generated: String? = null,
     val answering: Boolean = false,
+    val llmInstalled: Boolean = false,
 )
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
@@ -34,10 +32,21 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private var job: Job? = null
 
     init {
-        // Letzte Suche wiederherstellen: Treffer kommen schnell aus der lokalen DB, die gespeicherte
-        // Antwort wird übernommen, statt das LLM erneut rechnen zu lassen.
+        viewModelScope.launch {
+            container.ai.llmState.collect { s -> _state.update { it.copy(llmInstalled = s != LlmState.NOT_INSTALLED) } }
+        }
+        // Letzte Suche wiederherstellen: Treffer und ausformulierte Antwort kommen schnell aus der lokalen DB,
+        // eine gespeicherte LLM-Antwort wird übernommen, statt das Modell erneut rechnen zu lassen.
         val lastQuery = store.lastQuery
-        if (lastQuery.isNotBlank()) restore(lastQuery, store.lastAnswer, store.lastAnswerGenerated)
+        if (lastQuery.isNotBlank()) {
+            _state.update { it.copy(query = lastQuery, searching = true) }
+            job = viewModelScope.launch {
+                val result = container.repository.search(lastQuery)
+                _state.update {
+                    it.copy(searching = false, result = result, generated = store.lastAnswer.takeIf { store.lastAnswerGenerated })
+                }
+            }
+        }
     }
 
     fun onQueryChange(q: String) = _state.update { it.copy(query = q) }
@@ -47,37 +56,24 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         job?.cancel()
         store.lastQuery = q
         store.lastAnswer = null
-        _state.update { it.copy(query = q, searching = true, answer = null, answering = false) }
+        store.lastAnswerGenerated = false
+        _state.update { it.copy(query = q, searching = true, result = null, generated = null, answering = false) }
         job = viewModelScope.launch {
             val result = container.repository.search(q)
-            _state.update { it.copy(searching = false, result = result) }
-            if (result.hits.isEmpty()) return@launch
+            // Regelbasierte Antwort ist sofort da; das LLM (falls installiert) formuliert danach nach.
+            _state.update { it.copy(searching = false, result = result, answering = it.llmInstalled && result.hits.isNotEmpty()) }
+            if (result.hits.isEmpty() || !_state.value.llmInstalled) return@launch
 
-            // Schnelle extraktive Antwort sofort anzeigen, LLM-Antwort (falls vorhanden) ersetzt sie.
-            val extractive = extractiveAnswer(result.hits)
-            _state.update { it.copy(answer = extractive, answerIsGenerated = false, answering = true) }
-            val generated = container.ai.answer(q, result.hits.take(6).map { it.snippet })
-            val final = generated?.takeIf { it.isNotBlank() }
-            _state.update {
-                if (final == null) it.copy(answering = false)
-                else it.copy(answer = final, answerIsGenerated = true, answering = false)
-            }
-            store.lastAnswer = final ?: extractive
-            store.lastAnswerGenerated = final != null
-        }
-    }
-
-    private fun restore(q: String, answer: String?, generated: Boolean) {
-        _state.update { it.copy(query = q, searching = true) }
-        job = viewModelScope.launch {
-            val result = container.repository.search(q)
-            _state.update {
-                it.copy(
-                    searching = false,
-                    result = result,
-                    answer = answer ?: result.hits.takeIf { h -> h.isNotEmpty() }?.let { h -> extractiveAnswer(h) },
-                    answerIsGenerated = answer != null && generated,
-                )
+            val generated = container.ai.answer(
+                question = q,
+                contexts = result.hits.map { it.snippet },
+                summary = result.query.isSummary,
+                periodLabel = result.query.timeLabel,
+            )?.takeIf { it.isNotBlank() }
+            _state.update { it.copy(generated = generated, answering = false) }
+            if (generated != null) {
+                store.lastAnswer = generated
+                store.lastAnswerGenerated = true
             }
         }
     }
@@ -85,15 +81,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun clear() {
         job?.cancel()
         store.clearSearch()
-        _state.value = SearchUiState()
-    }
-
-    private fun extractiveAnswer(hits: List<SearchHit>): String {
-        val best = hits.first().snippet
-        val fmt = SimpleDateFormat("EEEE, d. MMMM 'um' HH:mm", Locale.GERMANY)
-        val flat = best.text.replace(Regex("\\s+"), " ")
-        val excerpt = if (flat.length > 220) flat.take(220) + "…" else flat
-        return "Bester Treffer: ${best.appLabel}, ${fmt.format(Date(best.timestamp))}.\n„$excerpt“" +
-            if (hits.size > 1) "\n\n${hits.size - 1} weitere Treffer in der Timeline." else ""
+        _state.update { SearchUiState(llmInstalled = it.llmInstalled) }
     }
 }
