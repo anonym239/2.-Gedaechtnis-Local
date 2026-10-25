@@ -33,7 +33,8 @@ fun GlassCard(modifier: Modifier = Modifier, accent: Color? = null, content: @Co
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        // Leicht transparent, damit der Hintergrundverlauf durchscheint.
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f)),
         border = BorderStroke(1.dp, accent?.copy(alpha = 0.45f) ?: MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(18.dp), content = content)

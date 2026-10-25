@@ -2,7 +2,6 @@ package de.gedaechtnis.local.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,7 +25,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.background
+import androidx.compose.ui.unit.dp
+import de.gedaechtnis.local.ui.theme.AppBackgroundBrush
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -53,8 +56,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Dunkle System-Bars, unabhängig vom System-Theme.
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
 
@@ -78,10 +81,11 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(current) { current?.let { uiState.lastRoute = it } }
 
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    containerColor = MaterialTheme.colorScheme.background,
+                    // Verlauf liegt hinter allem; Scaffold und Navigationsleiste sind transparent.
+                    modifier = Modifier.fillMaxSize().background(AppBackgroundBrush),
+                    containerColor = Color.Transparent,
                     bottomBar = {
-                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                             Tab.entries.forEach { tab ->
                                 NavigationBarItem(
                                     selected = current == tab.route,

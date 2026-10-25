@@ -9,6 +9,13 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import de.gedaechtnis.local.R
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -142,19 +149,32 @@ fun HomeScreen(contentPadding: PaddingValues, vm: HomeViewModel = viewModel()) {
 
 @Composable
 private fun Header() {
-    Column(Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) {
-        Text(
-            "Zweit-Gedächtnis",
-            style = MaterialTheme.typography.headlineMedium.merge(TextStyle(brush = NeonGradient)),
+    Row(Modifier.padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // App-Icon im Kopfbereich (Vordergrund-Ebene des Adaptive Icons auf dem Icon-Hintergrund).
+        Image(
+            painter = painterResource(R.mipmap.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF1E1E36), Color(0xFF07081C)))),
+            contentScale = ContentScale.Crop,
         )
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-            Icon(Icons.Default.Shield, null, Modifier.size(14.dp), tint = SuccessGreen)
-            Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(14.dp))
+        Column {
             Text(
-                "100 % lokal · keine Internet-Berechtigung",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                "Zweit-Gedächtnis",
+                style = MaterialTheme.typography.headlineMedium.merge(TextStyle(brush = NeonGradient)),
             )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                Icon(Icons.Default.Shield, null, Modifier.size(14.dp), tint = SuccessGreen)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "100 % lokal · keine Internet-Berechtigung",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -219,7 +239,7 @@ private fun StatTile(label: String, value: String, unit: String?, accent: Color,
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 14.dp)) {

@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +23,18 @@ val NeonPink = Color(0xFFF472B6)
 val SuccessGreen = Color(0xFF34D399)
 val WarningAmber = Color(0xFFFBBF24)
 val TextHigh = Color(0xFFECECF4)
+
+/** Eingabeleiste und Chips im Chat-Stil. */
+val InputBarColor = Color(0xFF1E1F24)
+/** Runder Aktionsknopf (Tiefblau). */
+val SendButtonColor = Color(0xFF1F3A93)
+
+/** App-Hintergrund: Tiefschwarz, das nach unten in ein dunkles Blau übergeht. */
+val AppBackgroundBrush = Brush.verticalGradient(
+    0.0f to Color(0xFF020204),
+    0.55f to Color(0xFF040614),
+    1.0f to Color(0xFF0E1A55),
+)
 val TextMid = Color(0xFFA1A1B5)
 
 private val DarkScheme = darkColorScheme(
